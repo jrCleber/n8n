@@ -1,59 +1,36 @@
 <template>
-	<span>
-		<router-link
-			v-if="useRouterLink"
-			:to="to"
-			v-on="$listeners"
-		>
-			<slot></slot>
-		</router-link>
-		<a
-			v-else
-			:href="to"
-			:target="openNewWindow ? '_blank': '_self'"
-			v-on="$listeners"
-		>
-			<slot></slot>
-		</a>
-	</span>
+	<router-link v-if="useRouterLink" :to="to" v-bind="$attrs">
+		<slot></slot>
+	</router-link>
+	<a v-else :href="to" :target="openNewWindow ? '_blank' : '_self'" v-bind="$attrs">
+		<slot></slot>
+	</a>
 </template>
 
-<script lang="ts">
-import Vue from 'vue';
+<script lang="ts" setup>
+import { computed } from 'vue';
+import { type RouteLocationRaw } from 'vue-router';
 
-export default Vue.extend({
-	name: 'n8n-route',
-	props: {
-		to: {
-			type: String || Object,
-		},
-		newWindow: {
-			type: Boolean || undefined,
-			default: undefined,
-		},
-	},
-	computed: {
-		useRouterLink() {
-			if (this.newWindow === true) {
-				// router-link does not support click events and opening in new window
-				return false;
-			}
-			if (typeof this.to === 'string') {
-				return (this.to as string).startsWith('/');
-			}
+interface RouteProps {
+	to?: RouteLocationRaw;
+	newWindow?: boolean;
+}
 
-			return this.to !== undefined;
-		},
-		openNewWindow() {
-			if (this.newWindow !== undefined) {
-				return this.newWindow;
-			}
-			if (typeof this.to === 'string') {
-				return !(this.to as string).startsWith('/');
-			}
-			return true;
-		},
-	},
+defineOptions({ name: 'N8nRoute' });
+const props = defineProps<RouteProps>();
+
+const useRouterLink = computed(() => {
+	if (props.newWindow) {
+		// router-link does not support click events and opening in new window
+		return false;
+	}
+
+	if (typeof props.to === 'string') {
+		return props.to.startsWith('/');
+	}
+
+	return props.to !== undefined;
 });
-</script>
 
+const openNewWindow = computed(() => !useRouterLink.value);
+</script>

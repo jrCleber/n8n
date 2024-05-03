@@ -1,10 +1,16 @@
-import Vue from 'vue';
-import { isAllowedInDotNotation, escape, toVariableOption } from '../utils';
+import { defineComponent } from 'vue';
+import { escape, toVariableOption } from '../utils';
 import type { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import type { IDataObject, IPinData, IRunData } from 'n8n-workflow';
-import type { CodeNodeEditorMixin } from '../types';
+import { mapStores } from 'pinia';
+import { useWorkflowsStore } from '@/stores/workflows.store';
+import { useNDVStore } from '@/stores/ndv.store';
+import { isAllowedInDotNotation } from '@/plugins/codemirror/completions/utils';
 
-export const jsonFieldCompletions = (Vue as CodeNodeEditorMixin).extend({
+export const jsonFieldCompletions = defineComponent({
+	computed: {
+		...mapStores(useNDVStore, useWorkflowsStore),
+	},
 	methods: {
 		/**
 		 * - Complete `x.first().json.` to `.field`.
@@ -206,12 +212,14 @@ export const jsonFieldCompletions = (Vue as CodeNodeEditorMixin).extend({
 
 		getInputNodeName() {
 			try {
-				const activeNode = this.$store.getters.activeNode;
-				const workflow = this.getCurrentWorkflow();
-				const input = workflow.connectionsByDestinationNode[activeNode.name];
+				const activeNode = this.ndvStore.activeNode;
+				if (activeNode) {
+					const workflow = this.getCurrentWorkflow();
+					const input = workflow.connectionsByDestinationNode[activeNode.name];
 
-				return input.main[0][0].node;
-			} catch (_) {
+					return input.main[0][0].node;
+				}
+			} catch {
 				return null;
 			}
 		},
@@ -225,7 +233,10 @@ export const jsonFieldCompletions = (Vue as CodeNodeEditorMixin).extend({
 			jsonOutput: IDataObject,
 			matcher: string, // e.g. `$input.first().json` or `x` (user-defined variable)
 		) {
-			if (preCursor.text.endsWith('.json[') || preCursor.text.endsWith(`${matcher}[`)) {
+			if (
+				/\.json\[/.test(preCursor.text) ||
+				new RegExp(`(${escape(matcher)})\\[`).test(preCursor.text)
+			) {
 				const options: Completion[] = Object.keys(jsonOutput)
 					.map((field) => `${matcher}['${field}']`)
 					.map((label) => ({
@@ -239,7 +250,10 @@ export const jsonFieldCompletions = (Vue as CodeNodeEditorMixin).extend({
 				};
 			}
 
-			if (preCursor.text.endsWith('.json.') || preCursor.text.endsWith(`${matcher}.`)) {
+			if (
+				/\.json\./.test(preCursor.text) ||
+				new RegExp(`(${escape(matcher)})\.`).test(preCursor.text)
+			) {
 				const options: Completion[] = Object.keys(jsonOutput)
 					.filter(isAllowedInDotNotation)
 					.map((field) => `${matcher}.${field}`)
@@ -261,11 +275,20 @@ export const jsonFieldCompletions = (Vue as CodeNodeEditorMixin).extend({
 		 * `index` is only passed for `all()`.
 		 */
 		getJsonOutput(quotedNodeName: string, options?: { accessor?: string; index?: number }) {
-			const nodeName = quotedNodeName.replace(/['"]/g, '');
+			let nodeName = quotedNodeName;
 
-			const pinData: IPinData | undefined = this.$store.getters.pinData;
+			const isSingleQuoteWrapped = quotedNodeName.startsWith("'") && quotedNodeName.endsWith("'");
+			const isDoubleQuoteWrapped = quotedNodeName.startsWith('"') && quotedNodeName.endsWith('"');
 
-			const nodePinData = pinData && pinData[nodeName];
+			if (isSingleQuoteWrapped) {
+				nodeName = quotedNodeName.replace(/^'/, '').replace(/'$/, '');
+			} else if (isDoubleQuoteWrapped) {
+				nodeName = quotedNodeName.replace(/^"/, '').replace(/"$/, '');
+			}
+
+			const pinData: IPinData | undefined = this.workflowsStore.pinnedWorkflowData;
+
+			const nodePinData = pinData?.[nodeName];
 
 			if (nodePinData) {
 				try {
@@ -276,10 +299,10 @@ export const jsonFieldCompletions = (Vue as CodeNodeEditorMixin).extend({
 					}
 
 					return nodePinData[itemIndex].json;
-				} catch (_) {}
+				} catch {}
 			}
 
-			const runData: IRunData | null = this.$store.getters.getWorkflowRunData;
+			const runData: IRunData | null = this.workflowsStore.getWorkflowRunData;
 
 			const nodeRunData = runData && runData[nodeName];
 
@@ -294,7 +317,7 @@ export const jsonFieldCompletions = (Vue as CodeNodeEditorMixin).extend({
 				}
 
 				return nodeRunData[0].data!.main[0]![itemIndex].json;
-			} catch (_) {
+			} catch {
 				return null;
 			}
 		},

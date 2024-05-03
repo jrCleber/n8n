@@ -6,7 +6,7 @@
 	"resources": {
 		"primaryDocumentation": [
 			{
-				"url": "https://docs.n8n.io/nodes/n8n-nodes-base.compareDatasets/"
+				"url": "https://docs.n8n.io/integrations/builtin/core-nodes/n8n-nodes-base.comparedatasets/"
 			}
 		],
 		"generic": [
@@ -41,7 +41,7 @@
 			}
 		]
 	},
-	"alias": ["Join", "Concatenate", "Compare", "Dataset", "Split"],
+	"alias": ["Join", "Concatenate", "Compare", "Dataset", "Split", "Sync", "Syncing"],
 	"subcategories": {
 		"Core Nodes": ["Flow"]
 	}

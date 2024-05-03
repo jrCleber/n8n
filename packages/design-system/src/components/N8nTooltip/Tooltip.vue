@@ -1,37 +1,61 @@
 <template>
-	<el-tooltip v-bind="$attrs">
-		<template v-for="(_, slotName) in $slots" #[slotName]>
-			<slot :name="slotName"/>
-			<div :key="slotName" v-if="slotName === 'content' && buttons.length" :class="$style.buttons" :style="{ justifyContent: justifyButtons }">
-				<n8n-button
-						v-for="button in buttons"
-						:key="button.attrs.label"
-						v-bind="button.attrs"
-						v-on="button.listeners"
+	<ElTooltip v-bind="{ ...$props, ...$attrs }" :popper-class="$props.popperClass ?? 'n8n-tooltip'">
+		<slot />
+		<template #content>
+			<slot name="content">
+				<div v-html="content"></div>
+			</slot>
+			<div
+				v-if="buttons.length"
+				:class="$style.buttons"
+				:style="{ justifyContent: justifyButtons }"
+			>
+				<N8nButton
+					v-for="button in buttons"
+					:key="button.attrs.label"
+					v-bind="{ ...button.attrs, ...button.listeners }"
 				/>
 			</div>
 		</template>
-	</el-tooltip>
+	</ElTooltip>
 </template>
 
 <script lang="ts">
-import Vue, { PropType } from "vue";
-import ElTooltip from 'element-ui/lib/tooltip';
-import type { IN8nButton } from "@/types";
+import type { PropType } from 'vue';
+import { defineComponent } from 'vue';
+import { ElTooltip } from 'element-plus';
+import type { IN8nButton } from '@/types';
 import N8nButton from '../N8nButton';
 
-export default Vue.extend({
-	name: 'n8n-tooltip',
-	inheritAttrs: false,
+export default defineComponent({
+	name: 'N8nTooltip',
 	components: {
-		ElTooltip, // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+		ElTooltip,
 		N8nButton,
 	},
+	inheritAttrs: false,
 	props: {
+		...ElTooltip.props,
+		content: {
+			type: String,
+			default: '',
+		},
 		justifyButtons: {
 			type: String,
 			default: 'flex-end',
-			validator: (value: string): boolean => ['flex-start', 'flex-end', 'start', 'end', 'left', 'right', 'center', 'space-between', 'space-around', 'space-evenly'].includes(value),
+			validator: (value: string): boolean =>
+				[
+					'flex-start',
+					'flex-end',
+					'start',
+					'end',
+					'left',
+					'right',
+					'center',
+					'space-between',
+					'space-around',
+					'space-evenly',
+				].includes(value),
 		},
 		buttons: {
 			type: Array as PropType<IN8nButton[]>,
@@ -46,5 +70,6 @@ export default Vue.extend({
 	display: flex;
 	align-items: center;
 	margin-top: var(--spacing-s);
+	gap: var(--spacing-2xs);
 }
 </style>

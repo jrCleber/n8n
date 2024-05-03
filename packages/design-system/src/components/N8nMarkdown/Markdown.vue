@@ -3,187 +3,154 @@
 		<div
 			v-if="!loading"
 			ref="editor"
-			class="ph-no-capture"
-			:class="$style[theme]" v-html="htmlContent"
+			:class="$style[theme]"
 			@click="onClick"
+			v-html="htmlContent"
 		/>
 		<div v-else :class="$style.markdown">
-			<div v-for="(block, index) in loadingBlocks"
-				:key="index">
-				<n8n-loading
-					:loading="loading"
-					:rows="loadingRows"
-					animated
-					variant="p"
-				/>
+			<div v-for="(_, index) in loadingBlocks" :key="index">
+				<N8nLoading :loading="loading" :rows="loadingRows" animated variant="p" />
 				<div :class="$style.spacer" />
 			</div>
 		</div>
 	</div>
 </template>
 
-<script lang="ts">
-import N8nLoading from '../N8nLoading';
+<script lang="ts" setup>
+import { computed } from 'vue';
+import type { Options as MarkdownOptions } from 'markdown-it';
 import Markdown from 'markdown-it';
-
-// @ts-ignore
 import markdownLink from 'markdown-it-link-attributes';
-// @ts-ignore
 import markdownEmoji from 'markdown-it-emoji';
-// @ts-ignore
-import markdownTasklists from 'markdown-it-task-lists';
-
+import markdownTaskLists from 'markdown-it-task-lists';
 import xss, { friendlyAttrValue } from 'xss';
+
+import N8nLoading from '../N8nLoading';
 import { escapeMarkdown } from '../../utils/markdown';
-
-const DEFAULT_OPTIONS_MARKDOWN = {
-	html: true,
-	linkify: true,
-	typographer: true,
-	breaks: true,
-};
-
-const DEFAULT_OPTIONS_LINK_ATTRIBUTES = {
-	attrs: {
-		target: '_blank',
-		rel: 'noopener',
-	},
-};
-
-const DEFAULT_OPTIONS_TASKLISTS = {
-	label: true,
-	labelAfter: true,
-};
 
 interface IImage {
 	id: string;
 	url: string;
 }
 
-import Vue from 'vue';
+interface Options {
+	markdown: MarkdownOptions;
+	linkAttributes: markdownLink.Config;
+	tasklists: markdownTaskLists.Config;
+}
 
-export default Vue.extend({
-	components: {
-		N8nLoading,
-	},
-	name: 'n8n-markdown',
-	props: {
-		content: {
-			type: String,
+interface MarkdownProps {
+	content?: string;
+	withMultiBreaks?: boolean;
+	images?: IImage[];
+	loading?: boolean;
+	loadingBlocks?: number;
+	loadingRows?: number;
+	theme?: string;
+	options?: Options;
+}
+
+const props = withDefaults(defineProps<MarkdownProps>(), {
+	content: '',
+	withMultiBreaks: false,
+	images: () => [],
+	loading: false,
+	loadingBlocks: 2,
+	loadingRows: 3,
+	theme: 'markdown',
+	options: () => ({
+		markdown: {
+			html: true,
+			linkify: true,
+			typographer: true,
+			breaks: true,
 		},
-		withMultiBreaks: {
-			type: Boolean,
-		},
-		images: {
-			type: Array,
-		},
-		loading: {
-			type: Boolean,
-		},
-		loadingBlocks: {
-			type: Number,
-			default: 2,
-		},
-		loadingRows: {
-			type: Number,
-			default: () => {
-				return 3;
+		linkAttributes: {
+			attrs: {
+				target: '_blank',
+				rel: 'noopener',
 			},
 		},
-		theme: {
-			type: String,
-			default: 'markdown',
+		tasklists: {
+			label: true,
+			labelAfter: true,
 		},
-		options: {
-			type: Object,
-			default() {
-				return {
-					markdown: DEFAULT_OPTIONS_MARKDOWN,
-					linkAttributes: DEFAULT_OPTIONS_LINK_ATTRIBUTES,
-					tasklists: DEFAULT_OPTIONS_TASKLISTS,
-				};
-			},
-		},
-	},
-	computed: {
-		htmlContent(): string {
-			if (!this.content) {
-				 return '';
+	}),
+});
+
+const { options } = props;
+const md = new Markdown(options.markdown)
+	.use(markdownLink, options.linkAttributes)
+	.use(markdownEmoji)
+	.use(markdownTaskLists, options.tasklists);
+
+const htmlContent = computed(() => {
+	if (!props.content) {
+		return '';
+	}
+
+	const imageUrls: { [key: string]: string } = {};
+	if (props.images) {
+		props.images.forEach((image: IImage) => {
+			if (!image) {
+				// Happens if an image got deleted but the workflow
+				// still has a reference to it
+				return;
 			}
+			imageUrls[image.id] = image.url;
+		});
+	}
 
-			const imageUrls: { [key: string]: string } = {};
-			if (this.images) {
-				// @ts-ignore
-				this.images.forEach((image: IImage) => {
-					if (!image) {
-						// Happens if an image got deleted but the workflow
-						// still has a reference to it
-						return;
-					}
-					imageUrls[image.id] = image.url;
-				});
-			}
-
-			const fileIdRegex = new RegExp('fileId:([0-9]+)');
-			const imageFilesRegex = /\.(jpeg|jpg|gif|png|webp|bmp|tif|tiff|apng|svg|avif)$/;
-			let contentToRender = this.content;
-			if (this.withMultiBreaks) {
-				contentToRender = contentToRender.replaceAll('\n\n', '\n&nbsp;\n');
-			}
-			const html = this.md.render(escapeMarkdown(contentToRender));
-			const safeHtml = xss(html, {
-				onTagAttr: (tag, name, value, isWhiteAttr) => {
-					if (tag === 'img' && name === 'src') {
-						if (value.match(fileIdRegex)) {
-							const id = value.split('fileId:')[1];
-							return `src=${friendlyAttrValue(imageUrls[id])}` || '';
-						}
-						// Only allow http requests to supported image files from the `static` directory
-						const isImageFile = value.split('#')[0].match(/\.(jpeg|jpg|gif|png|webp)$/) !== null;
-						const isStaticImageFile = isImageFile && value.startsWith('/static/');
-						if (!value.startsWith('https://') && !isStaticImageFile) {
-							return '';
-						}
-					}
-					// Return nothing, means keep the default handling measure
-				},
-				onTag (tag, code, options) {
-					if (tag === 'img' && code.includes(`alt="workflow-screenshot"`)) {
-						return '';
-					}
-					// return nothing, keep tag
-				},
-			});
-
-			return safeHtml;
-		},
-	},
-	data() {
-		return {
-			md: new Markdown(this.options.markdown) // eslint-disable-line @typescript-eslint/no-unsafe-member-access
-				.use(markdownLink, this.options.linkAttributes) // eslint-disable-line @typescript-eslint/no-unsafe-member-access
-				.use(markdownEmoji)
-				.use(markdownTasklists, this.options.tasklists), // eslint-disable-line @typescript-eslint/no-unsafe-member-access
-		};
-	},
-	methods: {
-		onClick(event: MouseEvent) {
-			let clickedLink = null;
-
-			if(event.target instanceof HTMLAnchorElement) {
-				clickedLink = event.target;
-			}
-
-			if(event.target instanceof HTMLElement && event.target.matches('a *')) {
-				const parentLink = event.target.closest('a');
-				if(parentLink) {
-					clickedLink = parentLink;
+	const fileIdRegex = new RegExp('fileId:([0-9]+)');
+	let contentToRender = props.content;
+	if (props.withMultiBreaks) {
+		contentToRender = contentToRender.replaceAll('\n\n', '\n&nbsp;\n');
+	}
+	const html = md.render(escapeMarkdown(contentToRender));
+	const safeHtml = xss(html, {
+		onTagAttr: (tag, name, value) => {
+			if (tag === 'img' && name === 'src') {
+				if (value.match(fileIdRegex)) {
+					const id = value.split('fileId:')[1];
+					const attributeValue = friendlyAttrValue(imageUrls[id]);
+					return attributeValue ? `src=${attributeValue}` : '';
+				}
+				// Only allow http requests to supported image files from the `static` directory
+				const isImageFile = value.split('#')[0].match(/\.(jpeg|jpg|gif|png|webp)$/) !== null;
+				const isStaticImageFile = isImageFile && value.startsWith('/static/');
+				if (!value.startsWith('https://') && !isStaticImageFile) {
+					return '';
 				}
 			}
-			this.$emit('markdown-click', clickedLink, event);
+			// Return nothing, means keep the default handling measure
 		},
-	},
+		onTag(tag, code) {
+			if (tag === 'img' && code.includes('alt="workflow-screenshot"')) {
+				return '';
+			}
+			// return nothing, keep tag
+		},
+	});
+
+	return safeHtml;
 });
+
+const $emit = defineEmits(['markdown-click']);
+const onClick = (event: MouseEvent) => {
+	let clickedLink: HTMLAnchorElement | null = null;
+
+	if (event.target instanceof HTMLAnchorElement) {
+		clickedLink = event.target;
+	}
+
+	if (event.target instanceof HTMLElement && event.target.matches('a *')) {
+		const parentLink = event.target.closest('a');
+		if (parentLink) {
+			clickedLink = parentLink;
+		}
+	}
+	$emit('markdown-click', clickedLink, event);
+};
 </script>
 
 <style lang="scss" module>
@@ -195,13 +162,17 @@ export default Vue.extend({
 		line-height: var(--font-line-height-xloose);
 	}
 
-	h1, h2, h3, h4 {
+	h1,
+	h2,
+	h3,
+	h4 {
 		margin-bottom: var(--spacing-s);
 		font-size: var(--font-size-m);
 		font-weight: var(--font-weight-bold);
 	}
 
-	h3, h4 {
+	h3,
+	h4 {
 		font-weight: var(--font-weight-bold);
 	}
 
@@ -210,7 +181,8 @@ export default Vue.extend({
 		margin-bottom: var(--spacing-s);
 	}
 
-	ul, ol {
+	ul,
+	ol {
 		margin-bottom: var(--spacing-s);
 		padding-left: var(--spacing-m);
 
@@ -244,10 +216,7 @@ export default Vue.extend({
 	}
 
 	img {
-		width: 100%;
-		max-height: 90vh;
-		object-fit: cover;
-		border: var(--border-width-base) var(--color-foreground-base) var(--border-style-base);
+		max-width: 100%;
 		border-radius: var(--border-radius-large);
 	}
 
@@ -259,9 +228,21 @@ export default Vue.extend({
 }
 
 .sticky {
-	color: var(--color-text-dark);
+	color: var(--color-sticky-font);
 
-	h1, h2, h3, h4 {
+	h1,
+	h2,
+	h3,
+	h4,
+	h5,
+	h6 {
+		color: var(--color-sticky-font);
+	}
+
+	h1,
+	h2,
+	h3,
+	h4 {
 		margin-bottom: var(--spacing-2xs);
 		font-weight: var(--font-weight-bold);
 		line-height: var(--font-line-height-loose);
@@ -275,7 +256,10 @@ export default Vue.extend({
 		font-size: 24px;
 	}
 
-	h3, h4, h5, h6 {
+	h3,
+	h4,
+	h5,
+	h6 {
 		font-size: var(--font-size-m);
 	}
 
@@ -286,7 +270,8 @@ export default Vue.extend({
 		line-height: var(--font-line-height-loose);
 	}
 
-	ul, ol {
+	ul,
+	ol {
 		margin-bottom: var(--spacing-2xs);
 		padding-left: var(--spacing-m);
 
@@ -299,13 +284,15 @@ export default Vue.extend({
 	}
 
 	code {
-		background-color: var(--color-background-base);
+		background-color: var(--color-sticky-code-background);
 		padding: 0 var(--spacing-4xs);
-		color: var(--color-secondary);
+		color: var(--color-sticky-code-font);
 	}
 
-	pre > code,li > code, p > code {
-		color: var(--color-secondary);
+	pre > code,
+	li > code,
+	p > code {
+		color: var(--color-sticky-code-font);
 	}
 
 	a {
@@ -316,8 +303,10 @@ export default Vue.extend({
 
 	img {
 		object-fit: contain;
+		margin-top: var(--spacing-xs);
+		margin-bottom: var(--spacing-2xs);
 
-		&[src*="#full-width"] {
+		&[src*='#full-width'] {
 			width: 100%;
 		}
 	}

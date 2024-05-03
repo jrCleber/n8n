@@ -1,261 +1,390 @@
 <template>
 	<n8n-input-label
-		:label="hideLabel? '': $locale.nodeText().inputLabelDisplayName(parameter, path)"
-		:tooltipText="hideLabel? '': $locale.nodeText().inputLabelDescription(parameter, path)"
-		:showTooltip="focused"
-		:showOptions="menuExpanded || focused || forceShowExpression"
+		:class="[$style.wrapper, { [$style.tipVisible]: showDragnDropTip }]"
+		:label="hideLabel ? '' : i18n.nodeText().inputLabelDisplayName(parameter, path)"
+		:tooltip-text="hideLabel ? '' : i18n.nodeText().inputLabelDescription(parameter, path)"
+		:show-tooltip="focused"
+		:show-options="menuExpanded || focused || forceShowExpression"
+		:options-position="optionsPosition"
 		:bold="false"
-		size="small"
+		:size="label.size"
 		color="text-dark"
 	>
-		<template #options>
-			<parameter-options
+		<template v-if="displayOptions && optionsPosition === 'top'" #options>
+			<ParameterOptions
 				:parameter="parameter"
 				:value="value"
-				:isReadOnly="isReadOnly"
-				:showOptions="displayOptions"
-				:showExpressionSelector="showExpressionSelector"
-				@optionSelected="optionSelected"
+				:is-read-only="isReadOnly"
+				:show-options="displayOptions"
+				:show-expression-selector="showExpressionSelector"
+				@update:model-value="optionSelected"
 				@menu-expanded="onMenuExpanded"
 			/>
 		</template>
-		<template>
-			<draggable-target
-				type="mapping"
-				:disabled="isDropDisabled"
-				:sticky="true"
-				:stickyOffset="4"
-				@drop="onDrop"
-			>
-				<template v-slot="{ droppable, activeDrop }">
-					<n8n-tooltip
-						placement="left"
-						:manual="true"
-						:value="showMappingTooltip"
-						:buttons="dataMappingTooltipButtons"
-					>
-						<span slot="content" v-html="$locale.baseText(`dataMapping.${displayMode}Hint`, { interpolate: { name: parameter.displayName } })" />
-						<parameter-input-wrapper
-							ref="param"
-							:parameter="parameter"
-							:value="value"
-							:path="path"
-							:isReadOnly="isReadOnly"
-							:droppable="droppable"
-							:activeDrop="activeDrop"
-							:forceShowExpression="forceShowExpression"
-							:hint="hint"
-							@valueChanged="valueChanged"
-							@focus="onFocus"
-							@blur="onBlur"
-							@drop="onDrop"
-							inputSize="small"
-						/>
-					</n8n-tooltip>
-				</template>
-			</draggable-target>
-		</template>
+		<DraggableTarget
+			type="mapping"
+			:disabled="isDropDisabled"
+			:sticky="true"
+			:sticky-offset="isValueExpression ? [26, 3] : [3, 3]"
+			@drop="onDrop"
+		>
+			<template #default="{ droppable, activeDrop }">
+				<ParameterInputWrapper
+					ref="param"
+					:parameter="parameter"
+					:model-value="value"
+					:path="path"
+					:is-read-only="isReadOnly"
+					:is-assignment="isAssignment"
+					:rows="rows"
+					:droppable="droppable"
+					:active-drop="activeDrop"
+					:force-show-expression="forceShowExpression"
+					:hint="hint"
+					:hide-hint="hideHint"
+					:hide-issues="hideIssues"
+					:label="label"
+					:event-bus="eventBus"
+					input-size="small"
+					@update="valueChanged"
+					@text-input="onTextInput"
+					@focus="onFocus"
+					@blur="onBlur"
+					@drop="onDrop"
+				/>
+			</template>
+		</DraggableTarget>
+		<div v-if="showDragnDropTip" :class="$style.tip">
+			<InlineExpressionTip />
+		</div>
+		<div
+			:class="{
+				[$style.options]: true,
+				[$style.visible]: menuExpanded || focused || forceShowExpression,
+			}"
+		>
+			<ParameterOptions
+				v-if="optionsPosition === 'bottom'"
+				:parameter="parameter"
+				:value="value"
+				:is-read-only="isReadOnly"
+				:show-options="displayOptions"
+				:show-expression-selector="showExpressionSelector"
+				@update:model-value="optionSelected"
+				@menu-expanded="onMenuExpanded"
+			/>
+		</div>
 	</n8n-input-label>
 </template>
 
 <script lang="ts">
-import Vue from 'vue';
+import { defineComponent } from 'vue';
+import type { PropType } from 'vue';
+import { mapStores } from 'pinia';
 
-import {
-	IN8nButton,
-	INodeUi,
-	IRunDataDisplayMode,
-	IUpdateInformation,
-} from '@/Interface';
+import type { INodeUi, IRunDataDisplayMode, IUpdateInformation } from '@/Interface';
 
-import InputHint from './ParameterInputHint.vue';
-import ParameterOptions from './ParameterOptions.vue';
+import ParameterOptions from '@/components/ParameterOptions.vue';
 import DraggableTarget from '@/components/DraggableTarget.vue';
-import mixins from 'vue-typed-mixins';
-import { showMessage } from './mixins/showMessage';
-import { LOCAL_STORAGE_MAPPING_FLAG } from '@/constants';
-import { hasExpressionMapping } from './helpers';
-import ParameterInputWrapper from './ParameterInputWrapper.vue';
-import { hasOnlyListMode } from './ResourceLocator/helpers';
-import { INodePropertyMode } from 'n8n-workflow';
-import { isResourceLocatorValue } from '@/typeGuards';
-import { BaseTextKey } from "@/plugins/i18n";
+import { useI18n } from '@/composables/useI18n';
+import { useToast } from '@/composables/useToast';
+import { hasExpressionMapping, hasOnlyListMode, isValueExpression } from '@/utils/nodeTypesUtils';
+import { isResourceLocatorValue } from '@/utils/typeGuards';
+import ParameterInputWrapper from '@/components/ParameterInputWrapper.vue';
+import type {
+	INodeProperties,
+	INodePropertyMode,
+	IParameterLabel,
+	NodeParameterValueType,
+} from 'n8n-workflow';
+import { useNDVStore } from '@/stores/ndv.store';
+import { useSegment } from '@/stores/segment.store';
+import { getMappedResult } from '@/utils/mappingUtils';
+import { createEventBus } from 'n8n-design-system/utils';
+import InlineExpressionTip from './InlineExpressionEditor/InlineExpressionTip.vue';
 
-export default mixins(
-	showMessage,
-)
-	.extend({
-		name: 'parameter-input-full',
-		components: {
-			InputHint,
-			ParameterOptions,
-			DraggableTarget,
-			ParameterInputWrapper,
+export default defineComponent({
+	name: 'ParameterInputFull',
+	components: {
+		ParameterOptions,
+		DraggableTarget,
+		ParameterInputWrapper,
+		InlineExpressionTip,
+	},
+	props: {
+		displayOptions: {
+			type: Boolean,
+			default: false,
 		},
-		data() {
-			return {
-				focused: false,
-				menuExpanded: false,
-				forceShowExpression: false,
-				dataMappingTooltipButtons: [] as IN8nButton[],
-			};
+		optionsPosition: {
+			type: String as PropType<'bottom' | 'top'>,
+			default: 'top',
 		},
-		props: [
-			'displayOptions',
-			'isReadOnly',
-			'parameter',
-			'path',
-			'value',
-			'hideLabel',
-		],
-		created() {
-			const mappingTooltipDismissHandler = this.onMappingTooltipDismissed.bind(this);
-			this.dataMappingTooltipButtons = [
-				{
-					attrs: {
-						label: this.$locale.baseText('_reusableBaseText.dismiss' as BaseTextKey),
-					},
-					listeners: {
-						click: mappingTooltipDismissHandler,
-					},
-				},
-			];
+		hideHint: {
+			type: Boolean,
+			default: false,
 		},
-		computed: {
-			node (): INodeUi | null {
-				return this.$store.getters.activeNode;
-			},
-			hint (): string | null {
-				return this.$locale.nodeText().hint(this.parameter, this.path);
-			},
-			isResourceLocator (): boolean {
-				return  this.parameter.type === 'resourceLocator';
-			},
-			isDropDisabled (): boolean {
-				return this.parameter.noDataExpression || this.isReadOnly || this.isResourceLocator;
-			},
-			showExpressionSelector (): boolean {
-				return this.isResourceLocator ? !hasOnlyListMode(this.parameter): true;
-			},
-			isInputDataEmpty (): boolean {
-				return this.$store.getters['ui/getNDVDataIsEmpty']('input');
-			},
-			displayMode(): IRunDataDisplayMode {
-				return this.$store.getters['ui/inputPanelDisplayMode'];
-			},
-			showMappingTooltip (): boolean {
-				return this.focused && !this.isInputDataEmpty && window.localStorage.getItem(LOCAL_STORAGE_MAPPING_FLAG) !== 'true';
-			},
+		isReadOnly: {
+			type: Boolean,
+			default: false,
 		},
-		methods: {
-			onFocus() {
-				this.focused = true;
-				if (!this.parameter.noDataExpression) {
-					this.$store.commit('ui/setMappableNDVInputFocus', this.parameter.displayName);
-				}
-			},
-			onBlur() {
-				this.focused = false;
-				if (!this.parameter.noDataExpression) {
-					this.$store.commit('ui/setMappableNDVInputFocus', '');
-				}
-			},
-			onMenuExpanded(expanded: boolean) {
-				this.menuExpanded = expanded;
-			},
-			optionSelected (command: string) {
-				if (this.$refs.param) {
-					(this.$refs.param as Vue).$emit('optionSelected', command);
-				}
-			},
-			valueChanged (parameterData: IUpdateInformation) {
-				this.$emit('valueChanged', parameterData);
-			},
-			onDrop(data: string) {
+		rows: {
+			type: Number,
+			default: 5,
+		},
+		isAssignment: {
+			type: Boolean,
+			default: false,
+		},
+		hideLabel: {
+			type: Boolean,
+			default: false,
+		},
+		hideIssues: {
+			type: Boolean,
+			default: false,
+		},
+		parameter: {
+			type: Object as PropType<INodeProperties>,
+			required: true,
+		},
+		path: {
+			type: String,
+		},
+		value: {
+			type: [Number, String, Boolean, Array, Object] as PropType<NodeParameterValueType>,
+		},
+		label: {
+			type: Object as PropType<IParameterLabel>,
+			default: () => ({
+				size: 'small',
+			}),
+		},
+		entryIndex: {
+			type: Number,
+			default: undefined,
+		},
+	},
+	setup() {
+		const eventBus = createEventBus();
+		const i18n = useI18n();
+
+		return {
+			i18n,
+			eventBus,
+			...useToast(),
+		};
+	},
+	data() {
+		return {
+			focused: false,
+			menuExpanded: false,
+			forceShowExpression: false,
+		};
+	},
+	computed: {
+		...mapStores(useNDVStore),
+		node(): INodeUi | null {
+			return this.ndvStore.activeNode;
+		},
+		hint(): string | null {
+			return this.i18n.nodeText().hint(this.parameter, this.path);
+		},
+		isInputTypeString(): boolean {
+			return this.parameter.type === 'string';
+		},
+		isInputTypeNumber(): boolean {
+			return this.parameter.type === 'number';
+		},
+		isResourceLocator(): boolean {
+			return this.parameter.type === 'resourceLocator';
+		},
+		isDropDisabled(): boolean {
+			return this.parameter.noDataExpression || this.isReadOnly || this.isResourceLocator;
+		},
+		isValueExpression(): boolean {
+			return isValueExpression(this.parameter, this.value);
+		},
+		showExpressionSelector(): boolean {
+			return this.isResourceLocator ? !hasOnlyListMode(this.parameter) : true;
+		},
+		isInputDataEmpty(): boolean {
+			return this.ndvStore.isNDVDataEmpty('input');
+		},
+		displayMode(): IRunDataDisplayMode {
+			return this.ndvStore.inputPanelDisplayMode;
+		},
+		showDragnDropTip(): boolean {
+			return (
+				this.focused &&
+				(this.isInputTypeString || this.isInputTypeNumber) &&
+				!this.isValueExpression &&
+				!this.isDropDisabled &&
+				(!this.ndvStore.hasInputData || !this.isInputDataEmpty) &&
+				!this.ndvStore.isMappingOnboarded &&
+				this.ndvStore.isInputParentOfActiveNode
+			);
+		},
+	},
+	methods: {
+		onFocus() {
+			this.focused = true;
+			if (!this.parameter.noDataExpression) {
+				this.ndvStore.setMappableNDVInputFocus(this.parameter.displayName);
+			}
+			this.ndvStore.setFocusedInputPath(this.path ?? '');
+		},
+		onBlur() {
+			this.focused = false;
+			if (
+				!this.parameter.noDataExpression &&
+				this.ndvStore.focusedMappableInput === this.parameter.displayName
+			) {
+				this.ndvStore.setMappableNDVInputFocus('');
+			}
+			this.ndvStore.setFocusedInputPath('');
+			this.$emit('blur');
+		},
+		onMenuExpanded(expanded: boolean) {
+			this.menuExpanded = expanded;
+		},
+		optionSelected(command: string) {
+			this.eventBus.emit('optionSelected', command);
+		},
+		valueChanged(parameterData: IUpdateInformation) {
+			this.$emit('update', parameterData);
+		},
+		onTextInput(parameterData: IUpdateInformation) {
+			if (isValueExpression(this.parameter, parameterData.value)) {
+				this.eventBus.emit('optionSelected', 'addExpression');
+			}
+		},
+		onDrop(newParamValue: string) {
+			const updatedValue = getMappedResult(this.parameter, newParamValue, this.value);
+			const prevValue = this.isResourceLocator ? this.value.value : this.value;
+
+			if (updatedValue.startsWith('=')) {
 				this.forceShowExpression = true;
-				setTimeout(() => {
-					if (this.node) {
-						const prevValue = this.isResourceLocator ? this.value.value : this.value;
-						let updatedValue: string;
-						if (typeof prevValue === 'string' && prevValue.startsWith('=') && prevValue.length > 1) {
-							updatedValue = `${prevValue} ${data}`;
-						}
-						else {
-							updatedValue = `=${data}`;
-						}
-
-
-						let parameterData;
-						if (this.isResourceLocator) {
-							if (!isResourceLocatorValue(this.value)) {
-								parameterData = {
-									node: this.node.name,
-									name: this.path,
-									value: { __rl: true, value: updatedValue, mode: '' },
-								};
-							}
-							else if (this.value.mode === 'list' && this.parameter.modes && this.parameter.modes.length > 1) {
-								let mode = this.parameter.modes.find((mode: INodePropertyMode) => mode.name === 'id') || null;
-								if (!mode) {
-									mode = this.parameter.modes.filter((mode: INodePropertyMode) => mode.name !== 'list')[0];
-								}
-
-								parameterData = {
-									node: this.node.name,
-									name: this.path,
-									value: { __rl: true, value: updatedValue, mode: mode ? mode.name : '' },
-								};
-							}
-							else {
-								parameterData = {
-									node: this.node.name,
-									name: this.path,
-									value: { __rl: true, value: updatedValue, mode: this.value.mode },
-								};
+			}
+			setTimeout(() => {
+				if (this.node) {
+					let parameterData;
+					if (this.isResourceLocator) {
+						if (!isResourceLocatorValue(this.value)) {
+							parameterData = {
+								node: this.node.name,
+								name: this.path,
+								value: { __rl: true, value: updatedValue, mode: '' },
+							};
+						} else if (
+							this.value.mode === 'list' &&
+							this.parameter.modes &&
+							this.parameter.modes.length > 1
+						) {
+							let mode =
+								this.parameter.modes.find((mode: INodePropertyMode) => mode.name === 'id') || null;
+							if (!mode) {
+								mode = this.parameter.modes.filter(
+									(mode: INodePropertyMode) => mode.name !== 'list',
+								)[0];
 							}
 
+							parameterData = {
+								node: this.node.name,
+								name: this.path,
+								value: { __rl: true, value: updatedValue, mode: mode ? mode.name : '' },
+							};
 						} else {
 							parameterData = {
 								node: this.node.name,
 								name: this.path,
-								value: updatedValue,
+								value: { __rl: true, value: updatedValue, mode: this.value.mode },
 							};
 						}
-
-						this.$emit('valueChanged', parameterData);
-
-						if (window.localStorage.getItem(LOCAL_STORAGE_MAPPING_FLAG) !== 'true') {
-							this.$showMessage({
-								title: this.$locale.baseText('dataMapping.success.title'),
-								message: this.$locale.baseText('dataMapping.success.moreInfo'),
-								type: 'success',
-							});
-
-							window.localStorage.setItem(LOCAL_STORAGE_MAPPING_FLAG, 'true');
-						}
-
-						this.$store.commit('ui/setMappingTelemetry', {
-							dest_node_type: this.node.type,
-							dest_parameter: this.path,
-							dest_parameter_mode: typeof prevValue === 'string' && prevValue.startsWith('=')? 'expression': 'fixed',
-							dest_parameter_empty: prevValue === '' || prevValue === undefined,
-							dest_parameter_had_mapping: typeof prevValue === 'string' && prevValue.startsWith('=') && hasExpressionMapping(prevValue),
-							success: true,
-						});
+					} else {
+						parameterData = {
+							node: this.node.name,
+							name: this.path,
+							value: updatedValue,
+						};
 					}
-					this.forceShowExpression = false;
-				}, 200);
-			},
-			onMappingTooltipDismissed() {
-				window.localStorage.setItem(LOCAL_STORAGE_MAPPING_FLAG, 'true');
-			},
-		},
-		watch: {
-			showMappingTooltip(newValue: boolean) {
-				if (!newValue) {
-					this.$telemetry.track('User viewed data mapping tooltip', { type: 'param focus' });
+
+					this.valueChanged(parameterData);
+					this.eventBus.emit('drop', updatedValue);
+
+					if (!this.ndvStore.isMappingOnboarded) {
+						this.showMessage({
+							title: this.i18n.baseText('dataMapping.success.title'),
+							message: this.i18n.baseText('dataMapping.success.moreInfo'),
+							type: 'success',
+							dangerouslyUseHTMLString: true,
+						});
+
+						this.ndvStore.setMappingOnboarded();
+					}
+
+					this.ndvStore.setMappingTelemetry({
+						dest_node_type: this.node.type,
+						dest_parameter: this.path,
+						dest_parameter_mode:
+							typeof prevValue === 'string' && prevValue.startsWith('=') ? 'expression' : 'fixed',
+						dest_parameter_empty: prevValue === '' || prevValue === undefined,
+						dest_parameter_had_mapping:
+							typeof prevValue === 'string' &&
+							prevValue.startsWith('=') &&
+							hasExpressionMapping(prevValue),
+						success: true,
+					});
+
+					const segment = useSegment();
+					segment.track(segment.EVENTS.MAPPED_DATA);
 				}
-			},
+				this.forceShowExpression = false;
+			}, 200);
 		},
-	});
+	},
+});
 </script>
+
+<style lang="scss" module>
+.wrapper {
+	position: relative;
+
+	&:hover {
+		.options {
+			opacity: 1;
+		}
+	}
+}
+
+.tipVisible {
+	--input-border-bottom-left-radius: 0;
+	--input-border-bottom-right-radius: 0;
+}
+
+.tip {
+	position: absolute;
+	z-index: 2;
+	top: 100%;
+	background: var(--color-code-background);
+	border: var(--border-base);
+	border-top: none;
+	width: 100%;
+	box-shadow: 0 2px 6px 0 rgba(#441c17, 0.1);
+	border-bottom-left-radius: 4px;
+	border-bottom-right-radius: 4px;
+}
+
+.options {
+	position: absolute;
+	bottom: -22px;
+	right: 0;
+	z-index: 1;
+	opacity: 0;
+	transition: opacity 100ms ease-in;
+
+	&.visible {
+		opacity: 1;
+	}
+}
+</style>

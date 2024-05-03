@@ -6,7 +6,7 @@
 	"resources": {
 		"credentialDocumentation": [
 			{
-				"url": "https://docs.n8n.io/credentials/google"
+				"url": "https://docs.n8n.io/integrations/builtin/credentials/google/oauth-single-service/"
 			}
 		],
 		"primaryDocumentation": [
@@ -91,5 +91,5 @@
 			}
 		]
 	},
-	"alias": ["CSV", "Spreadsheet", "GS"]
+	"alias": ["CSV", "Sheet", "Spreadsheet", "GS"]
 }

@@ -1,18 +1,23 @@
 <template>
 	<div class="n8n-tree">
-		<div v-for="(label, i) in Object.keys(value || {})" :key="i" :class="{[nodeClass]: !!nodeClass, [$style.indent]: depth > 0}">
-			<div :class="$style.simple" v-if="isSimple(value[label])">
-				<slot v-if="$scopedSlots.label" name="label" v-bind:label="label" v-bind:path="getPath(label)" />
+		<div v-for="(label, i) in Object.keys(value)" :key="i" :class="classes">
+			<div v-if="isSimple(value[label])" :class="$style.simple">
+				<slot v-if="$slots.label" name="label" :label="label" :path="getPath(label)" />
 				<span v-else>{{ label }}</span>
 				<span>:</span>
-				<slot v-if="$scopedSlots.value" name="value" v-bind:value="value[label]" />
+				<slot v-if="$slots.value" name="value" :value="value[label]" />
 				<span v-else>{{ value[label] }}</span>
 			</div>
 			<div v-else>
-				<slot v-if="$scopedSlots.label" name="label" v-bind:label="label" v-bind:path="getPath(label)" />
+				<slot v-if="$slots.label" name="label" :label="label" :path="getPath(label)" />
 				<span v-else>{{ label }}</span>
-				<n8n-tree :path="getPath(label)" :depth="depth + 1" :value="value[label]" :nodeClass="nodeClass">
-					<template v-for="(index, name) in $scopedSlots" v-slot:[name]="data">
+				<n8n-tree
+					:path="getPath(label)"
+					:depth="depth + 1"
+					:value="value[label]"
+					:node-class="nodeClass"
+				>
+					<template v-for="(_, name) in $slots" #[name]="data">
 						<slot :name="name" v-bind="data"></slot>
 					</template>
 				</n8n-tree>
@@ -21,56 +26,54 @@
 	</div>
 </template>
 
-<script lang="ts">
-import Vue from 'vue';
+<script lang="ts" setup>
+import { computed, useCssModule } from 'vue';
 
-export default Vue.extend({
-	name: 'n8n-tree',
-	components: {
-	},
-	props: {
-		value: {
-		},
-		path: {
-			type: Array,
-			default: () => [],
-		},
-		depth: {
-			type: Number,
-			default: 0,
-		},
-		nodeClass: {
-			type: String,
-		},
-	},
-	methods: {
-		isSimple(data: unknown): boolean {
-			if (data === null || data === undefined) {
-				return true;
-			}
+interface TreeProps {
+	value?: Record<string, unknown>;
+	path?: string[];
+	depth?: number;
+	nodeClass?: string;
+}
 
-			if (typeof data === 'object' && Object.keys(data).length === 0) {
-				return true;
-			}
-
-			if (Array.isArray(data) && data.length === 0) {
-				return true;
-			}
-
-			return typeof data !== 'object';
-		},
-		getPath(key: string): unknown[] {
-			if (Array.isArray(this.value)) {
-				return [...this.path, parseInt(key, 10)];
-			}
-			return [...this.path, key];
-		},
-	},
+defineOptions({ name: 'N8nTree' });
+const props = withDefaults(defineProps<TreeProps>(), {
+	value: () => ({}),
+	path: () => [],
+	depth: 0,
+	nodeClass: '',
 });
+
+const $style = useCssModule();
+const classes = computed((): Record<string, boolean> => {
+	return { [props.nodeClass]: !!props.nodeClass, [$style.indent]: props.depth > 0 };
+});
+
+const isSimple = (data: unknown): boolean => {
+	if (data === null || data === undefined) {
+		return true;
+	}
+
+	if (typeof data === 'object' && Object.keys(data).length === 0) {
+		return true;
+	}
+
+	if (Array.isArray(data) && data.length === 0) {
+		return true;
+	}
+
+	return typeof data !== 'object';
+};
+
+const getPath = (key: string): unknown[] => {
+	if (Array.isArray(props.value)) {
+		return [...props.path, parseInt(key, 10)];
+	}
+	return [...props.path, key];
+};
 </script>
 
 <style lang="scss" module>
-
 $--spacing: var(--spacing-s);
 
 .indent {
@@ -82,5 +85,4 @@ $--spacing: var(--spacing-s);
 	margin-left: $--spacing;
 	max-width: 300px;
 }
-
 </style>

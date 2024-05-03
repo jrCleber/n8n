@@ -1,7 +1,7 @@
-@use "mixins/mixins";
-@use "progress";
-@use "./common/var";
-@use "mixins/utils";
+@use 'mixins/mixins';
+@use 'progress';
+@use './common/var';
+@use 'mixins/utils';
 
 @include mixins.b(upload) {
 	display: inline-block;
@@ -195,7 +195,7 @@
 
 			.el-upload-list__item-name:hover,
 			.el-upload-list__item-name:focus {
-				color: var.$link-hover-color;
+				color: var.$link-color-hover;
 				cursor: pointer;
 			}
 

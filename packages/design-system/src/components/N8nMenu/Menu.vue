@@ -1,51 +1,47 @@
 <template>
-	<div :class="{
-		['menu-container']: true,
-		[$style.container]: true,
-		[$style.menuCollapsed]: collapsed
-	}">
+	<div
+		:class="{
+			['menu-container']: true,
+			[$style.container]: true,
+			[$style.menuCollapsed]: collapsed,
+			[$style.transparentBackground]: transparentBackground,
+		}"
+	>
 		<div v-if="$slots.header" :class="$style.menuHeader">
 			<slot name="header"></slot>
 		</div>
 		<div :class="$style.menuContent">
-			<div :class="{[$style.upperContent]: true, ['pt-xs']: $slots.menuPrefix }">
+			<div :class="{ [$style.upperContent]: true, ['pt-xs']: $slots.menuPrefix }">
 				<div v-if="$slots.menuPrefix" :class="$style.menuPrefix">
 					<slot name="menuPrefix"></slot>
 				</div>
-				<el-menu
-					:defaultActive="defaultActive"
-					:collapse="collapsed"
-					v-on="$listeners"
-				>
-					<n8n-menu-item
+				<ElMenu :default-active="defaultActive" :collapse="collapsed">
+					<N8nMenuItem
 						v-for="item in upperMenuItems"
 						:key="item.id"
 						:item="item"
 						:compact="collapsed"
-						:tooltipDelay="tooltipDelay"
+						:tooltip-delay="tooltipDelay"
 						:mode="mode"
-						:activeTab="activeTab"
-						@click="onSelect"
+						:active-tab="activeTab"
+						:handle-select="onSelect"
 					/>
-				</el-menu>
+				</ElMenu>
 			</div>
 			<div :class="[$style.lowerContent, 'pb-2xs']">
-				<el-menu
-					:defaultActive="defaultActive"
-					:collapse="collapsed"
-					v-on="$listeners"
-				>
-					<n8n-menu-item
+				<slot name="beforeLowerMenu"></slot>
+				<ElMenu :default-active="defaultActive" :collapse="collapsed">
+					<N8nMenuItem
 						v-for="item in lowerMenuItems"
 						:key="item.id"
 						:item="item"
 						:compact="collapsed"
-						:tooltipDelay="tooltipDelay"
+						:tooltip-delay="tooltipDelay"
 						:mode="mode"
-						:activeTab="activeTab"
-						@click="onSelect"
+						:active-tab="activeTab"
+						:handle-select="onSelect"
 					/>
-				</el-menu>
+				</ElMenu>
 				<div v-if="$slots.menuSuffix" :class="$style.menuSuffix">
 					<slot name="menuSuffix"></slot>
 				</div>
@@ -57,91 +53,76 @@
 	</div>
 </template>
 
-<script lang="ts">
-import ElMenu from 'element-ui/lib/menu';
+<script lang="ts" setup>
+import { computed, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
+import { ElMenu } from 'element-plus';
 import N8nMenuItem from '../N8nMenuItem';
+import type { IMenuItem } from '../../types';
+import { doesMenuItemMatchCurrentRoute } from '../N8nMenuItem/routerUtil';
 
-import Vue, { PropType } from 'vue';
-import { Route } from 'vue-router';
-import { IMenuItem } from '../../types';
+interface MenuProps {
+	type?: 'primary' | 'secondary';
+	defaultActive?: string;
+	collapsed?: boolean;
+	transparentBackground?: boolean;
+	mode?: 'router' | 'tabs';
+	tooltipDelay?: number;
+	items?: IMenuItem[];
+	modelValue?: string;
+}
 
-export default Vue.extend({
-	name: 'n8n-menu',
-	components: {
-		ElMenu, // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-		N8nMenuItem,
-	},
-	data() {
-		return {
-			activeTab: this.value,
-		};
-	},
-	props: {
-		type: {
-			type: String,
-			default: 'primary',
-			validator: (value: string): boolean => ['primary', 'secondary'].includes(value),
-		},
-		defaultActive: {
-			type: String,
-		},
-		collapsed: {
-			type: Boolean,
-			default: false,
-		},
-		mode: {
-			type: String,
-			default: 'router',
-			validator: (value: string): boolean => ['router', 'tabs'].includes(value),
-		},
-		tooltipDelay: {
-			type: Number,
-			default: 300,
-		},
-		items: {
-			type: Array as PropType<IMenuItem[]>,
-		},
-		value: {
-			type: String,
-			default: '',
-		},
-	},
-	mounted() {
-		if (this.mode === 'router') {
-			const found = this.items.find(item => {
-				return Array.isArray(item.activateOnRouteNames) && item.activateOnRouteNames.includes(this.$route.name || '') ||
-					Array.isArray(item.activateOnRoutePaths) && item.activateOnRoutePaths.includes(this.$route.path);
-			});
-			this.activeTab = found ? found.id : '';
-		} else {
-			this.activeTab =  this.items.length > 0 ? this.items[0].id : '';
-		}
-
-		this.$emit('input', this.activeTab);
-	},
-	computed: {
-		upperMenuItems(): IMenuItem[] {
-			return this.items.filter((item: IMenuItem) => item.position === 'top' && item.available !== false);
-		},
-		lowerMenuItems(): IMenuItem[] {
-			return this.items.filter((item: IMenuItem) => item.position === 'bottom' && item.available !== false);
-		},
-	},
-	methods: {
-		onSelect(event: MouseEvent, option: string): void {
-			if (this.mode === 'tabs') {
-				this.activeTab = option;
-			}
-			this.$emit('select', option);
-			this.$emit('input', this.activeTab);
-		},
-	},
-	watch: {
-		value(value: string) {
-			this.activeTab = value;
-		},
-	},
+const props = withDefaults(defineProps<MenuProps>(), {
+	type: 'primary',
+	collapsed: false,
+	transparentBackground: false,
+	mode: 'router',
+	tooltipDelay: 300,
+	items: () => [],
 });
+const $route = useRoute();
+
+const $emit = defineEmits<{
+	(event: 'select', itemId: string);
+	(event: 'update:modelValue', itemId: string);
+}>();
+
+const activeTab = ref(props.modelValue);
+
+const upperMenuItems = computed(() =>
+	props.items.filter((item: IMenuItem) => item.position === 'top' && item.available !== false),
+);
+
+const lowerMenuItems = computed(() =>
+	props.items.filter((item: IMenuItem) => item.position === 'bottom' && item.available !== false),
+);
+
+const currentRoute = computed(() => {
+	return $route ?? { name: '', path: '' };
+});
+
+onMounted(() => {
+	if (props.mode === 'router') {
+		const found = props.items.find((item) =>
+			doesMenuItemMatchCurrentRoute(item, currentRoute.value),
+		);
+
+		activeTab.value = found ? found.id : '';
+	} else {
+		activeTab.value = props.items.length > 0 ? props.items[0].id : '';
+	}
+
+	$emit('update:modelValue', activeTab.value);
+});
+
+const onSelect = (item: IMenuItem): void => {
+	if (props.mode === 'tabs') {
+		activeTab.value = item.id;
+	}
+
+	$emit('select', item.id);
+	$emit('update:modelValue', item.id);
+};
 </script>
 
 <style lang="scss" module>
@@ -149,7 +130,7 @@ export default Vue.extend({
 	height: 100%;
 	display: flex;
 	flex-direction: column;
-	background-color: var(--color-background-xlight);
+	background-color: var(--menu-background, var(--color-background-xlight));
 }
 
 .menuContent {
@@ -178,11 +159,12 @@ export default Vue.extend({
 
 .menuCollapsed {
 	transition: width 150ms ease-in-out;
-	:global(.hideme) { display: none !important; }
+	:global(.hideme) {
+		display: none !important;
+	}
 }
 
-.menuPrefix, .menuSuffix {
-	padding: var(--spacing-xs) var(--spacing-l);
+.transparentBackground {
+	background-color: transparent;
 }
-
 </style>

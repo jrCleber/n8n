@@ -1,4 +1,4 @@
-import { INodeProperties } from 'n8n-workflow';
+import type { INodeProperties } from 'n8n-workflow';
 
 export const postOperations: INodeProperties[] = [
 	{
@@ -18,11 +18,6 @@ export const postOperations: INodeProperties[] = [
 				description: 'Create a post',
 				action: 'Create a post',
 			},
-			// {
-			// 	name: 'Delete',
-			// 	value: 'delete',
-			// 	description: 'Delete a post',
-			// },
 			{
 				name: 'Get',
 				value: 'get',
@@ -92,9 +87,6 @@ export const postFields: INodeProperties[] = [
 				displayName: 'Content',
 				name: 'content',
 				type: 'string',
-				typeOptions: {
-					alwaysOpenEditWindow: true,
-				},
 				default: '',
 				description: 'The content for the post',
 			},
@@ -374,9 +366,6 @@ export const postFields: INodeProperties[] = [
 				displayName: 'Content',
 				name: 'content',
 				type: 'string',
-				typeOptions: {
-					alwaysOpenEditWindow: true,
-				},
 				default: '',
 				description: 'The content for the post',
 			},

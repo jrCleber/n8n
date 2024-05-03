@@ -1,24 +1,26 @@
-import { get } from 'lodash';
+import get from 'lodash/get';
 
-import {
+import type {
+	IDataObject,
 	IExecuteFunctions,
 	IHookFunctions,
 	ILoadOptionsFunctions,
 	IWebhookFunctions,
-} from 'n8n-core';
-
-import { IDataObject, IHttpRequestOptions, NodeApiError } from 'n8n-workflow';
+	IHttpRequestOptions,
+	JsonObject,
+	IHttpRequestMethods,
+} from 'n8n-workflow';
+import { jsonParse, NodeApiError } from 'n8n-workflow';
 
 export async function awsApiRequest(
 	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions | IWebhookFunctions,
 	service: string,
-	method: string,
+	method: IHttpRequestMethods,
 	path: string,
 	body?: string | Buffer,
 	query: IDataObject = {},
 	headers?: object,
-	// tslint:disable-next-line:no-any
-	): Promise<any> {
+): Promise<any> {
 	const credentials = await this.getCredentials('aws');
 
 	const requestOptions = {
@@ -37,23 +39,22 @@ export async function awsApiRequest(
 	try {
 		return await this.helpers.requestWithAuthentication.call(this, 'aws', requestOptions);
 	} catch (error) {
-		throw new NodeApiError(this.getNode(), error);
+		throw new NodeApiError(this.getNode(), error as JsonObject);
 	}
 }
 
 export async function awsApiRequestREST(
 	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
 	service: string,
-	method: string,
+	method: IHttpRequestMethods,
 	path: string,
 	body?: string,
 	query: IDataObject = {},
 	headers?: object,
-	// tslint:disable-next-line:no-any
-	): Promise<any> {
+): Promise<any> {
 	const response = await awsApiRequest.call(this, service, method, path, body, query, headers);
 	try {
-		return JSON.parse(response);
+		return JSON.parse(response as string);
 	} catch (e) {
 		return response;
 	}
@@ -63,33 +64,25 @@ export async function awsApiRequestAllItems(
 	this: IHookFunctions | IExecuteFunctions | ILoadOptionsFunctions,
 	propertyName: string,
 	service: string,
-	method: string,
+	method: IHttpRequestMethods,
 	path: string,
 	body?: string,
 	query: IDataObject = {},
 	headers: IDataObject = {},
-	// tslint:disable-next-line:no-any
 ): Promise<any> {
-
 	const returnData: IDataObject[] = [];
 
 	let responseData;
 
 	do {
-		responseData = await awsApiRequestREST.call(
-			this,
-			service,
-			method,
-			path,
-			body,
-			query,
-			headers,
-		);
+		responseData = await awsApiRequestREST.call(this, service, method, path, body, query, headers);
 		if (responseData.NextToken) {
-			const data = JSON.parse(body as string);
-			data['NextToken'] = responseData.NextToken;
+			const data = jsonParse<any>(body as string, {
+				errorMessage: 'Response body is not valid JSON',
+			});
+			data.NextToken = responseData.NextToken;
 		}
-		returnData.push.apply(returnData, get(responseData, propertyName));
+		returnData.push.apply(returnData, get(responseData, propertyName) as IDataObject[]);
 	} while (responseData.NextToken !== undefined);
 
 	return returnData;

@@ -1,101 +1,93 @@
 <template>
-	<el-skeleton :loading="loading" :animated="animated" :class="['n8n-loading', `n8n-loading-${variant}`]">
-		<template slot="template">
+	<ElSkeleton
+		:loading="loading"
+		:animated="animated"
+		:class="['n8n-loading', `n8n-loading-${variant}`]"
+	>
+		<template #template>
 			<div v-if="variant === 'h1'">
 				<div
-						v-for="(item, index) in rows"
-						:key="index"
-						:class="{
+					v-for="(item, index) in rows"
+					:key="index"
+					:class="{
 						[$style.h1Last]: item === rows && rows > 1 && shrinkLast,
 					}"
 				>
-					<el-skeleton-item
-							:variant="variant"
-					/>
+					<ElSkeletonItem :variant="variant" />
 				</div>
 			</div>
 			<div v-else-if="variant === 'p'">
 				<div
-						v-for="(item, index) in rows"
-						:key="index"
-						:class="{
+					v-for="(item, index) in rows"
+					:key="index"
+					:class="{
 						[$style.pLast]: item === rows && rows > 1 && shrinkLast,
-					}">
-					<el-skeleton-item
-							:variant="variant"
-					/>
+					}"
+				>
+					<ElSkeletonItem :variant="variant" />
 				</div>
 			</div>
-			<div :class="$style.custom" v-else-if="variant === 'custom'">
-				<el-skeleton-item
-						:variant="variant"
-				/>
+			<div v-else-if="variant === 'custom'" :class="$style.custom">
+				<ElSkeletonItem />
 			</div>
-			<el-skeleton-item
-					v-else
-					:variant="variant"
-			/>
+			<ElSkeletonItem v-else :variant="variant" />
 		</template>
-	</el-skeleton>
+	</ElSkeleton>
 </template>
 
-<script lang="ts">
-import ElSkeleton from 'element-ui/lib/skeleton';
-import ElSkeletonItem from 'element-ui/lib/skeleton-item';
+<script lang="ts" setup>
+import { ElSkeleton, ElSkeletonItem } from 'element-plus';
 
-import Vue from 'vue';
+const VARIANT = [
+	'custom',
+	'p',
+	'text',
+	'h1',
+	'h3',
+	'text',
+	'caption',
+	'button',
+	'image',
+	'circle',
+	'rect',
+] as const;
 
-export default Vue.extend({
-	name: 'n8n-loading',
-	components: {
-		ElSkeleton, // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-		ElSkeletonItem, // eslint-disable-line @typescript-eslint/no-unsafe-assignment
-	},
-	props: {
-		animated: {
-			type: Boolean,
-			default: true,
-		},
-		loading: {
-			type: Boolean,
-			default: true,
-		},
-		rows: {
-			type: Number,
-			default: 1,
-		},
-		shrinkLast: {
-			type: Boolean,
-			default: true,
-		},
-		variant: {
-			type: String,
-			default: 'p',
-			validator: (value: string): boolean => ['custom', 'p', 'text', 'h1', 'h3', 'text', 'caption', 'button', 'image', 'circle', 'rect'].includes(value),
-		},
-	},
+interface LoadingProps {
+	animated?: boolean;
+	loading?: boolean;
+	rows?: number;
+	shrinkLast?: boolean;
+	variant?: (typeof VARIANT)[number];
+}
+
+withDefaults(defineProps<LoadingProps>(), {
+	animated: true,
+	loading: true,
+	rows: 1,
+	shrinkLast: true,
+	variant: 'p',
 });
 </script>
 
 <style lang="scss" module>
 .h1Last {
-  width: 40%;
+	width: 40%;
 }
 .pLast {
-  width: 61%;
+	width: 61%;
 }
 .custom {
-  width: 100%;
-  height: 100%;
+	width: 100%;
+	height: 100%;
 }
 </style>
 
 <style lang="scss">
-.n8n-loading-custom .el-skeleton {
-  &,
-  .el-skeleton__item {
-	width: 100%;
-	height: 100%;
-  }
+.n8n-loading-custom.el-skeleton {
+	&,
+	.el-skeleton__item {
+		width: 100%;
+		height: 100%;
+	}
 }
 </style>

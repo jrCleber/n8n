@@ -1,8 +1,8 @@
-@use "mixins/mixins";
-@use "checkbox";
-@use "tag";
-@use "tooltip";
-@use "./common/var";
+@use 'mixins/mixins';
+@use 'checkbox';
+@use 'tag';
+@use 'tooltip';
+@use './common/var';
 
 @include mixins.b(table) {
 	position: relative;
@@ -489,7 +489,7 @@
 		& .el-table__body {
 			& tr.el-table__row--striped {
 				td {
-					background: #fafafa;
+					background: var.$table-row-striped-background-color;
 				}
 
 				&.current-row td {

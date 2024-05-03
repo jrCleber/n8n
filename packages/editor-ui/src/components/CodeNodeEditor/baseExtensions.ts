@@ -8,33 +8,42 @@ import {
 	lineNumbers,
 } from '@codemirror/view';
 import { bracketMatching, foldGutter, indentOnInput } from '@codemirror/language';
-import { acceptCompletion, closeBrackets } from '@codemirror/autocomplete';
-import { history, indentWithTab, insertNewlineAndIndent, toggleComment } from '@codemirror/commands';
+import { history, toggleComment, deleteCharBackward } from '@codemirror/commands';
 import { lintGutter } from '@codemirror/lint';
-import type { Extension } from '@codemirror/state';
+import { type Extension, Prec } from '@codemirror/state';
 
-import { customInputHandler } from './inputHandler';
+import { codeInputHandler } from '@/plugins/codemirror/inputHandlers/code.inputHandler';
+import {
+	autocompleteKeyMap,
+	enterKeyMap,
+	historyKeyMap,
+	tabKeyMap,
+} from '@/plugins/codemirror/keymap';
 
-const [_, bracketState] = closeBrackets() as readonly Extension[];
-
-export const baseExtensions = [
+export const readOnlyEditorExtensions: readonly Extension[] = [
 	lineNumbers(),
-	highlightActiveLineGutter(),
+	EditorView.lineWrapping,
 	highlightSpecialChars(),
+];
+
+export const writableEditorExtensions: readonly Extension[] = [
 	history(),
-	foldGutter(),
 	lintGutter(),
-	[customInputHandler, bracketState],
+	foldGutter(),
+	codeInputHandler(),
 	dropCursor(),
 	indentOnInput(),
 	bracketMatching(),
 	highlightActiveLine(),
-	keymap.of([
-		{ key: 'Enter', run: insertNewlineAndIndent },
-		{ key: 'Tab', run: acceptCompletion },
-		{ key: 'Enter', run: acceptCompletion },
-		{ key: 'Mod-/', run: toggleComment },
-		indentWithTab,
-	]),
-	EditorView.lineWrapping,
+	highlightActiveLineGutter(),
+	Prec.highest(
+		keymap.of([
+			...tabKeyMap(),
+			...enterKeyMap,
+			...autocompleteKeyMap,
+			...historyKeyMap,
+			{ key: 'Mod-/', run: toggleComment },
+			{ key: 'Backspace', run: deleteCharBackward, shift: deleteCharBackward },
+		]),
+	),
 ];

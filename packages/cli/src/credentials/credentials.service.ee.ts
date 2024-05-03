@@ -1,96 +1,77 @@
-/* eslint-disable import/no-cycle */
-/* eslint-disable no-param-reassign */
-import { DeleteResult, EntityManager, In, Not } from 'typeorm';
-import { Db } from '..';
-import { RoleService } from '../role/role.service';
-import { CredentialsService } from './credentials.service';
+import type { EntityManager, FindOptionsWhere } from '@n8n/typeorm';
+import type { SharedCredentials } from '@db/entities/SharedCredentials';
+import type { User } from '@db/entities/User';
+import { type CredentialsGetSharedOptions } from './credentials.service';
+import { SharedCredentialsRepository } from '@db/repositories/sharedCredentials.repository';
+import { UserRepository } from '@/databases/repositories/user.repository';
+import { CredentialsEntity } from '@/databases/entities/CredentialsEntity';
+import { Service } from 'typedi';
 
-import { CredentialsEntity } from '../databases/entities/CredentialsEntity';
-import { SharedCredentials } from '../databases/entities/SharedCredentials';
-import { User } from '../databases/entities/User';
-import { UserService } from '../user/user.service';
-import type { CredentialWithSharings } from './credentials.types';
+@Service()
+export class EnterpriseCredentialsService {
+	constructor(
+		private readonly userRepository: UserRepository,
+		private readonly sharedCredentialsRepository: SharedCredentialsRepository,
+	) {}
 
-export class EECredentialsService extends CredentialsService {
-	static async isOwned(
-		user: User,
-		credentialId: string,
-	): Promise<{ ownsCredential: boolean; credential?: CredentialsEntity }> {
-		const sharing = await this.getSharing(user, credentialId, ['credentials', 'role'], {
-			allowGlobalOwner: false,
-		});
+	async isOwned(user: User, credentialId: string) {
+		const sharing = await this.getSharing(user, credentialId, { allowGlobalScope: false }, [
+			'credentials',
+		]);
 
-		if (!sharing || sharing.role.name !== 'owner') return { ownsCredential: false };
+		if (!sharing || sharing.role !== 'credential:owner') return { ownsCredential: false };
 
 		const { credentials: credential } = sharing;
 
 		return { ownsCredential: true, credential };
 	}
 
-	static async getSharings(
-		transaction: EntityManager,
+	/**
+	 * Retrieve the sharing that matches a user and a credential.
+	 */
+	async getSharing(
+		user: User,
 		credentialId: string,
-	): Promise<SharedCredentials[]> {
-		const credential = await transaction.findOne(CredentialsEntity, credentialId, {
-			relations: ['shared'],
+		options: CredentialsGetSharedOptions,
+		relations: string[] = ['credentials'],
+	) {
+		const where: FindOptionsWhere<SharedCredentials> = { credentialsId: credentialId };
+
+		// Omit user from where if the requesting user has relevant
+		// global credential permissions. This allows the user to
+		// access credentials they don't own.
+		if (!options.allowGlobalScope || !user.hasGlobalScope(options.globalScope)) {
+			where.userId = user.id;
+		}
+
+		return await this.sharedCredentialsRepository.findOne({
+			where,
+			relations,
 		});
+	}
+
+	async getSharings(transaction: EntityManager, credentialId: string, relations = ['shared']) {
+		const credential = await transaction.findOne(CredentialsEntity, {
+			where: { id: credentialId },
+			relations,
+		});
+
 		return credential?.shared ?? [];
 	}
 
-	static async pruneSharings(
-		transaction: EntityManager,
-		credentialId: string,
-		userIds: string[],
-	): Promise<DeleteResult> {
-		return transaction.delete(SharedCredentials, {
-			credentials: { id: credentialId },
-			user: { id: Not(In(userIds)) },
-		});
-	}
-
-	static async share(
-		transaction: EntityManager,
-		credential: CredentialsEntity,
-		shareWithIds: string[],
-	): Promise<SharedCredentials[]> {
-		const [users, role] = await Promise.all([
-			UserService.getByIds(transaction, shareWithIds),
-			RoleService.trxGet(transaction, { scope: 'credential', name: 'user' }),
-		]);
+	async share(transaction: EntityManager, credential: CredentialsEntity, shareWithIds: string[]) {
+		const users = await this.userRepository.getByIds(transaction, shareWithIds);
 
 		const newSharedCredentials = users
 			.filter((user) => !user.isPending)
 			.map((user) =>
-				Db.collections.SharedCredentials.create({
-					credentials: credential,
-					user,
-					role,
+				this.sharedCredentialsRepository.create({
+					credentialsId: credential.id,
+					userId: user.id,
+					role: 'credential:user',
 				}),
 			);
 
-		return transaction.save(newSharedCredentials);
-	}
-
-	static addOwnerAndSharings(
-		credential: CredentialsEntity & CredentialWithSharings,
-	): CredentialsEntity & CredentialWithSharings {
-		credential.ownedBy = null;
-		credential.sharedWith = [];
-
-		credential.shared?.forEach(({ user, role }) => {
-			const { id, email, firstName, lastName } = user;
-
-			if (role.name === 'owner') {
-				credential.ownedBy = { id, email, firstName, lastName };
-				return;
-			}
-
-			credential.sharedWith?.push({ id, email, firstName, lastName });
-		});
-
-		// @ts-ignore
-		delete credential.shared;
-
-		return credential;
+		return await transaction.save(newSharedCredentials);
 	}
 }

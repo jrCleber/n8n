@@ -1,4 +1,4 @@
-import { INodeProperties } from 'n8n-workflow';
+import type { INodeProperties } from 'n8n-workflow';
 
 export const boardItemOperations: INodeProperties[] = [
 	{
@@ -33,8 +33,8 @@ export const boardItemOperations: INodeProperties[] = [
 			{
 				name: 'Create',
 				value: 'create',
-				description: 'Create an item in a board\'s group',
-				action: 'Create an item in a board\'s group',
+				description: "Create an item in a board's group",
+				action: "Create an item in a board's group",
 			},
 			{
 				name: 'Delete',
@@ -136,7 +136,7 @@ export const boardItemFields: INodeProperties[] = [
 				operation: ['changeColumnValue'],
 			},
 		},
-		description: 'The unique identifier of the item to to change column of',
+		description: 'The unique identifier of the item to change column of',
 	},
 	{
 		displayName: 'Column Name or ID',

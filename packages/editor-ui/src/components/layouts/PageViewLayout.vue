@@ -1,7 +1,7 @@
 <template>
-	<div :class="[$style.wrapper, !sidebarMenuCollapsed && $style.expandedSidebar]">
+	<div :class="[$style.wrapper, !uiStore.sidebarMenuCollapsed && $style.expandedSidebar]">
 		<div :class="$style.container">
-			<aside :class="$style.aside" v-if="$slots.aside">
+			<aside v-if="$slots.aside" :class="$style.aside">
 				<slot name="aside" />
 			</aside>
 			<main :class="$style.content">
@@ -12,9 +12,11 @@
 </template>
 
 <script lang="ts">
-import Vue from 'vue';
+import { defineComponent } from 'vue';
+import { mapStores } from 'pinia';
+import { useUIStore } from '@/stores/ui.store';
 
-export default Vue.extend({
+export default defineComponent({
 	name: 'PageViewLayout',
 	data() {
 		return {
@@ -22,9 +24,7 @@ export default Vue.extend({
 		};
 	},
 	computed: {
-		sidebarMenuCollapsed(): boolean {
-			return this.$store.getters['ui/sidebarMenuCollapsed'];
-		},
+		...mapStores(useUIStore),
 	},
 });
 </script>
@@ -33,9 +33,10 @@ export default Vue.extend({
 .wrapper {
 	display: flex;
 	height: 100%;
+	width: 100%;
+	max-width: 1280px;
 	justify-content: center;
 	box-sizing: border-box;
-	background: var(--color-gray-light);
 	padding: var(--spacing-l) var(--spacing-l) 0;
 	@media (min-width: 1200px) {
 		padding: var(--spacing-2xl) var(--spacing-2xl) 0;
@@ -43,7 +44,6 @@ export default Vue.extend({
 }
 
 .container {
-	max-width: 1280px;
 	display: flex;
 	justify-content: center;
 	align-items: center;

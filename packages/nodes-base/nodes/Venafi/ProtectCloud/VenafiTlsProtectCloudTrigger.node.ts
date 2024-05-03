@@ -1,4 +1,4 @@
-import {
+import type {
 	IHookFunctions,
 	ILoadOptionsFunctions,
 	INodePropertyOptions,
@@ -17,10 +17,9 @@ export class VenafiTlsProtectCloudTrigger implements INodeType {
 		icon: 'file:../venafi.svg',
 		group: ['trigger'],
 		version: 1,
-		description: 'Starts the workflow when Venafi events occure',
+		description: 'Starts the workflow when Venafi events occur',
 		defaults: {
-			name: 'Venafi TLS Protect Cloud​ Trigger',
-			color: '#000000',
+			name: 'Venafi TLS Protect Cloud Trigger',
 		},
 		credentials: [
 			{
@@ -87,7 +86,10 @@ export class VenafiTlsProtectCloudTrigger implements INodeType {
 				const activity = activitytypes.find(({ key }: { key: string }) => key === resource) as {
 					values: [{ key: string; readableName: string }];
 				};
-				const subActivities = activity.values.map(({ key, readableName }) => ({ name: readableName, value: key }));
+				const subActivities = activity.values.map(({ key, readableName }) => ({
+					name: readableName,
+					value: key,
+				}));
 				subActivities.unshift({ name: '[All]', value: '*' });
 				return subActivities;
 			},
@@ -104,6 +106,7 @@ export class VenafiTlsProtectCloudTrigger implements INodeType {
 				for (const connector of connectors) {
 					const {
 						id,
+						status,
 						properties: {
 							target: {
 								connection: { url },
@@ -111,7 +114,7 @@ export class VenafiTlsProtectCloudTrigger implements INodeType {
 						},
 					} = connector;
 
-					if (url === webhookUrl) {
+					if (url === webhookUrl && status === 'Active') {
 						await venafiApiRequest.call(this, 'DELETE', `/v1/connectors/${id}`);
 						return false;
 					}
@@ -137,7 +140,7 @@ export class VenafiTlsProtectCloudTrigger implements INodeType {
 					},
 				};
 
-				const responseData = await venafiApiRequest.call(this, 'POST', `/v1/connectors`, body);
+				const responseData = await venafiApiRequest.call(this, 'POST', '/v1/connectors', body);
 
 				if (responseData.id === undefined) {
 					// Required data is missing so was not successful
@@ -160,7 +163,7 @@ export class VenafiTlsProtectCloudTrigger implements INodeType {
 					}
 
 					// Remove from the static workflow data so that it is clear
-					// that no webhooks are registred anymore
+					// that no webhooks are registered anymore
 					delete webhookData.webhookId;
 				}
 
@@ -170,10 +173,10 @@ export class VenafiTlsProtectCloudTrigger implements INodeType {
 	};
 
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
-		const bodyData = this.getBodyData() as { message: string; eventName: string };
+		const { events } = this.getBodyData() as { events: [{ message: string; eventName: string }] };
 		const triggerOn = this.getNodeParameter('triggerOn') as string;
 
-		if (Object.keys(bodyData).length === 1 && bodyData.message) {
+		if (Array.isArray(events) && events[0]?.message?.includes('TESTING CONNECTION...')) {
 			// Is a create webhook confirmation request
 			const res = this.getResponseObject();
 			res.status(200).end();
@@ -182,10 +185,10 @@ export class VenafiTlsProtectCloudTrigger implements INodeType {
 			};
 		}
 
-		if (!triggerOn.includes('*') && !triggerOn.includes(bodyData.eventName)) return {};
+		if (!triggerOn.includes('*') && !triggerOn.includes(events[0]?.eventName)) return {};
 
 		return {
-			workflowData: [this.helpers.returnJsonArray(bodyData)],
+			workflowData: [this.helpers.returnJsonArray(events)],
 		};
 	}
 }

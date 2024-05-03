@@ -1,14 +1,16 @@
-import { IExecuteFunctions } from 'n8n-core';
-import {
+/* eslint-disable @typescript-eslint/no-loop-func */
+import type { NodeVMOptions } from '@n8n/vm2';
+import { NodeVM } from '@n8n/vm2';
+import type {
+	IExecuteFunctions,
 	IBinaryKeyData,
 	IDataObject,
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
-	NodeOperationError,
 } from 'n8n-workflow';
-
-const { NodeVM } = require('vm2');
+import { deepCopy, NodeOperationError } from 'n8n-workflow';
+import { vmResolver } from '../Code/JavaScriptSandbox';
 
 export class FunctionItem implements INodeType {
 	description: INodeTypeDescription = {
@@ -20,7 +22,7 @@ export class FunctionItem implements INodeType {
 		version: 1,
 		description: 'Run custom function code which gets executed once per item',
 		defaults: {
-			name: 'FunctionItem',
+			name: 'Function Item',
 			color: '#ddbb33',
 		},
 		inputs: ['main'],
@@ -38,7 +40,7 @@ export class FunctionItem implements INodeType {
 				typeOptions: {
 					alwaysOpenEditWindow: true,
 					codeAutocomplete: 'functionItem',
-					editor: 'code',
+					editor: 'jsEditor',
 					rows: 10,
 				},
 				type: 'string',
@@ -74,7 +76,7 @@ return item;`,
 						inputData[key] = cleanupData(inputData[key] as IDataObject);
 					} else {
 						// Is some special object like a Date so stringify
-						inputData[key] = JSON.parse(JSON.stringify(inputData[key]));
+						inputData[key] = deepCopy(inputData[key]);
 					}
 				}
 			});
@@ -89,7 +91,7 @@ return item;`,
 				item.index = itemIndex;
 
 				// Copy the items as they may get changed in the functions
-				item = JSON.parse(JSON.stringify(item));
+				item = deepCopy(item);
 
 				// Define the global objects for the custom function
 				const sandbox = {
@@ -120,7 +122,7 @@ return item;`,
 						if (item?.binary && item?.index !== undefined && item?.index !== null) {
 							for (const binaryPropertyName of Object.keys(item.binary)) {
 								item.binary[binaryPropertyName].data = (
-									await this.helpers.getBinaryDataBuffer(item.index as number, binaryPropertyName)
+									await this.helpers.getBinaryDataBuffer(item.index, binaryPropertyName)
 								)?.toString('base64');
 							}
 						}
@@ -154,26 +156,13 @@ return item;`,
 				const dataProxy = this.getWorkflowDataProxy(itemIndex);
 				Object.assign(sandbox, dataProxy);
 
-				const options = {
+				const options: NodeVMOptions = {
 					console: mode === 'manual' ? 'redirect' : 'inherit',
 					sandbox,
-					require: {
-						external: false as boolean | { modules: string[] },
-						builtin: [] as string[],
-					},
+					require: vmResolver,
 				};
 
-				if (process.env.NODE_FUNCTION_ALLOW_BUILTIN) {
-					options.require.builtin = process.env.NODE_FUNCTION_ALLOW_BUILTIN.split(',');
-				}
-
-				if (process.env.NODE_FUNCTION_ALLOW_EXTERNAL) {
-					options.require.external = {
-						modules: process.env.NODE_FUNCTION_ALLOW_EXTERNAL.split(','),
-					};
-				}
-
-				const vm = new NodeVM(options);
+				const vm = new NodeVM(options as unknown as NodeVMOptions);
 
 				if (mode === 'manual') {
 					vm.on('console.log', this.sendMessageToUI);
@@ -203,16 +192,16 @@ return item;`,
 								.split(':');
 							if (lineParts.length > 2) {
 								const lineNumber = lineParts.splice(-2, 1);
-								if (!isNaN(lineNumber)) {
+								if (!isNaN(lineNumber as number)) {
 									error.message = `${error.message} [Line ${lineNumber} | Item Index: ${itemIndex}]`;
-									return Promise.reject(error);
+									throw error;
 								}
 							}
 						}
 
 						error.message = `${error.message} [Item Index: ${itemIndex}]`;
 
-						return Promise.reject(error);
+						throw error;
 					}
 				}
 
@@ -251,6 +240,6 @@ return item;`,
 				throw error;
 			}
 		}
-		return this.prepareOutputData(returnData);
+		return [returnData];
 	}
 }

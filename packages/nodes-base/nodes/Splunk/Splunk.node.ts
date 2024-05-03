@@ -1,14 +1,16 @@
-import { IExecuteFunctions } from 'n8n-core';
-
 import {
-	ICredentialsDecrypted,
-	ICredentialTestFunctions,
-	IDataObject,
-	ILoadOptionsFunctions,
-	INodeCredentialTestResult,
-	INodeExecutionData,
-	INodeType,
-	INodeTypeDescription,
+	type IExecuteFunctions,
+	type ICredentialsDecrypted,
+	type ICredentialTestFunctions,
+	type IDataObject,
+	type ILoadOptionsFunctions,
+	type INodeCredentialTestResult,
+	type INodeExecutionData,
+	type INodeType,
+	type INodeTypeDescription,
+	type IRequestOptions,
+	NodeApiError,
+	NodeOperationError,
 } from 'n8n-workflow';
 
 import {
@@ -34,9 +36,8 @@ import {
 	userOperations,
 } from './descriptions';
 
-import { SplunkCredentials, SplunkFeedResponse } from './types';
-
-import { OptionsWithUri } from 'request';
+import type { SplunkCredentials, SplunkFeedResponse } from './types';
+import set from 'lodash/set';
 
 export class Splunk implements INodeType {
 	description: INodeTypeDescription = {
@@ -126,7 +127,7 @@ export class Splunk implements INodeType {
 
 				const endpoint = '/services/alerts/fired_alerts';
 
-				const options: OptionsWithUri = {
+				const options: IRequestOptions = {
 					headers: {
 						Authorization: `Bearer ${authToken}`,
 						'Content-Type': 'application/x-www-form-urlencoded',
@@ -157,10 +158,10 @@ export class Splunk implements INodeType {
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
-		const returnData: IDataObject[] = [];
+		const returnData: INodeExecutionData[] = [];
 
-		const resource = this.getNodeParameter('resource', 0) as string;
-		const operation = this.getNodeParameter('operation', 0) as string;
+		const resource = this.getNodeParameter('resource', 0);
+		const operation = this.getNodeParameter('operation', 0);
 
 		let responseData;
 
@@ -228,7 +229,7 @@ export class Splunk implements INodeType {
 						// https://docs.splunk.com/Documentation/Splunk/8.2.2/RESTREF/RESTsearch#saved.2Fsearches
 
 						const qs = {} as IDataObject;
-						const options = this.getNodeParameter('options', i) as IDataObject;
+						const options = this.getNodeParameter('options', i);
 
 						populate(options, qs);
 						setCount.call(this, qs);
@@ -308,7 +309,7 @@ export class Splunk implements INodeType {
 						// https://docs.splunk.com/Documentation/Splunk/8.2.2/RESTREF/RESTsearch#search.2Fjobs
 
 						const qs = {} as IDataObject;
-						const options = this.getNodeParameter('options', i) as IDataObject;
+						const options = this.getNodeParameter('options', i);
 
 						populate(options, qs);
 						setCount.call(this, qs);
@@ -341,7 +342,7 @@ export class Splunk implements INodeType {
 						const filters = this.getNodeParameter('filters', i) as IDataObject & {
 							keyValueMatch?: { keyValuePair?: { key: string; value: string } };
 						};
-						const options = this.getNodeParameter('options', i) as IDataObject;
+						const options = this.getNodeParameter('options', i);
 
 						const keyValuePair = filters?.keyValueMatch?.keyValuePair;
 
@@ -377,7 +378,7 @@ export class Splunk implements INodeType {
 							password: this.getNodeParameter('password', i),
 						} as IDataObject;
 
-						const additionalFields = this.getNodeParameter('additionalFields', i) as IDataObject;
+						const additionalFields = this.getNodeParameter('additionalFields', i);
 
 						populate(additionalFields, body);
 
@@ -456,18 +457,30 @@ export class Splunk implements INodeType {
 				}
 			} catch (error) {
 				if (this.continueOnFail()) {
-					returnData.push({ error: error.cause.error });
+					returnData.push({ json: { error: error.cause.error }, pairedItem: { item: i } });
 					continue;
 				}
 
-				throw error;
+				if (error instanceof NodeApiError) {
+					set(error, 'context.itemIndex', i);
+				}
+
+				if (error instanceof NodeOperationError && error?.context?.itemIndex === undefined) {
+					set(error, 'context.itemIndex', i);
+				}
+
+				throw new NodeOperationError(this.getNode(), error, { itemIndex: i });
 			}
 
-			Array.isArray(responseData)
-				? returnData.push(...responseData)
-				: returnData.push(responseData as IDataObject);
+			if (Array.isArray(responseData)) {
+				for (const item of responseData) {
+					returnData.push({ json: item, pairedItem: { item: i } });
+				}
+			} else {
+				returnData.push({ json: responseData, pairedItem: { item: i } });
+			}
 		}
 
-		return [this.helpers.returnJsonArray(returnData)];
+		return [returnData];
 	}
 }
